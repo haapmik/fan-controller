@@ -1,15 +1,15 @@
 # fan-controller
-Fan controller for Orange PI system made with Rust.
+PWM Fan controller for Orange PI system made with Rust.
 
-This was just a small personal project to learn Rust programming language.
+This was just a small personal project to learn [Rust programming language](https://www.rust-lang.org/).
 
 ## Installation
 
-Please install wiringPI first.
+This program depends on [wiringOP](https://github.com/orangepi-xunlong/wiringOP) so please install it first.
 
 ```sh
 git clone https://github.com/orangepi-xunlong/wiringOP.git
-cd wiringIP
+cd wiringOP
 ./build clean
 ./build
 ```
