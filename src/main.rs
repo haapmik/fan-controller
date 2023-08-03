@@ -51,18 +51,20 @@ struct Pwm {
 
 impl Pwm {
     fn new(args: &Args) -> Self {
-        unsafe {
-            wiringPiSetup();
-            pinMode(args.gpio_pwm, 1); // 1 = output
-            softPwmCreate(args.gpio_pwm, args.pwm_max, args.pwm_max); // GPIO pin, initial value, range
-        }
-
         Self {
             current: args.pwm_max,
             previous: args.pwm_max,
             min: args.pwm_min,
             max: args.pwm_max,
             gpio_pin: args.gpio_pwm,
+        }
+    }
+
+    fn init(&self) {
+        unsafe {
+            wiringPiSetup();
+            pinMode(self.gpio_pin, 1); // 1 = output
+            softPwmCreate(self.gpio_pin, self.max, self.max); // GPIO pin, initial value, range
         }
     }
 
@@ -160,6 +162,8 @@ impl Controller {
     }
 
     fn start(&mut self) {
+        self.pwm.init();
+
         loop {
             thread::sleep(self.pollrate);
 
