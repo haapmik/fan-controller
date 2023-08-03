@@ -41,204 +41,334 @@ struct Args {
     gpio_pwm: i32,
 }
 
-fn read_temperature(file_path: &str) -> Result<i32, std::io::Error> {
-    let fcontent = fs::read_to_string(file_path)?;
-    let value: i32 = fcontent.trim().parse().unwrap_or_else(|error| {
-        panic!("Failed to read temperature: {:?}", error);
-    });
-    Ok(value)
+struct Pwm {
+    current: i32,
+    previous: i32,
+    min: i32,
+    max: i32,
+    gpio_pin: i32,
 }
 
-fn fix_pwm_value(value: i32, args: &Args) -> i32 {
-    if value > args.pwm_max {
-        return args.pwm_max;
+impl Pwm {
+    fn new(args: &Args) -> Self {
+        unsafe {
+            wiringPiSetup();
+            pinMode(args.gpio_pwm, 1); // 1 = output
+            softPwmCreate(args.gpio_pwm, args.pwm_max, args.pwm_max); // GPIO pin, initial value, range
+        }
+
+        Self {
+            current: args.pwm_max,
+            previous: args.pwm_max,
+            min: args.pwm_min,
+            max: args.pwm_max,
+            gpio_pin: args.gpio_pwm,
+        }
     }
 
-    if value < args.pwm_min {
-        return args.pwm_min;
+    fn fix_pwm_value(&self, value: i32) -> i32 {
+        if value > self.max {
+            return self.max;
+        }
+
+        if value < self.min {
+            return self.min;
+        }
+
+        return value;
     }
 
-    return value;
-}
-
-fn check_required_pwm(
-    current_temperature: i32,
-    previous_temperature: i32,
-    current_pwm: i32,
-    args: &Args,
-) -> i32 {
-    if current_temperature == args.temperature_target_value {
-        return current_pwm;
-    }
-
-    if current_temperature >= args.temperature_max_value {
-        return args.pwm_max;
-    }
-
-    if current_temperature > args.temperature_target_value
-        && previous_temperature <= current_temperature
-    {
-        return current_pwm + 2;
-    }
-
-    if current_temperature > args.temperature_target_value
-        && previous_temperature > current_temperature
-    {
-        return current_pwm - 1;
-    }
-
-    if current_temperature < args.temperature_target_value {
-        return current_pwm - 1;
-    }
-
-    return current_pwm;
-}
-
-fn write_pwm_value(value: i32, gpio_pin: i32) {
-    unsafe {
-        softPwmWrite(gpio_pin, value);
+    fn write(&mut self, value: i32) {
+        self.previous = self.current;
+        self.current = self.fix_pwm_value(value);
+        unsafe {
+            softPwmWrite(self.gpio_pin, self.current);
+        }
     }
 }
 
-fn controller(args: &Args) {
-    let mut old_pwm = args.pwm_min;
-    let mut previous_temperature: i32 = 0;
+struct Temperature {
+    current: i32,
+    previous: i32,
+    max: i32,
+    target: i32,
+    source_file_path: String,
+}
 
-    let sleep_time = time::Duration::from_secs(args.pollrate);
+impl Temperature {
+    fn new(args: &Args) -> Self {
+        Self {
+            current: 0,
+            previous: 0,
+            max: args.temperature_max_value,
+            target: args.temperature_target_value,
+            source_file_path: "".to_string(),
+        }
+    }
 
-    loop {
-        thread::sleep(sleep_time);
+    fn read(&mut self) {
+        self.previous = self.current;
+        let fcontext = fs::read_to_string(&self.source_file_path).unwrap_or_else(|error| {
+            panic!("Failed to read temperature: {:?}", error);
+        });
 
-        let current_temperature = match read_temperature(&args.temperature_file_path) {
-            Ok(value) => value,
-            Err(error) => {
-                // On error, raise fan speed to max to avoid damage
-                write_pwm_value(args.pwm_max, args.gpio_pwm);
-                panic!("Controller failed: {:?}", error)
+        let value: i32 = fcontext.parse().unwrap_or_else(|error| {
+            panic!("Failed to parse temperature value: {:?}", error);
+        });
+
+        self.current = value / 1000;
+    }
+}
+
+struct Controller {
+    pollrate: time::Duration,
+    temperature: Temperature,
+    pwm: Pwm,
+}
+
+impl Controller {
+    fn new(args: &Args) -> Self {
+        Self {
+            pollrate: time::Duration::from_secs(args.pollrate),
+            temperature: Temperature::new(&args),
+            pwm: Pwm::new(&args),
+        }
+    }
+
+    fn get_required_pwm(&self) -> i32 {
+        if self.temperature.current >= self.temperature.max {
+            return self.pwm.max;
+        }
+
+        if self.temperature.current > self.temperature.target
+            && self.temperature.previous <= self.temperature.current
+        {
+            return self.pwm.current + 2;
+        }
+
+        if self.temperature.current > self.temperature.target
+            && self.temperature.previous > self.temperature.current
+        {
+            return self.pwm.current - 1;
+        }
+
+        if self.temperature.current < self.temperature.target {
+            return self.pwm.current - 1;
+        }
+
+        return self.pwm.current;
+    }
+
+    fn start(&mut self) {
+        loop {
+            thread::sleep(self.pollrate);
+
+            self.temperature.read();
+
+            if self.temperature.current == self.temperature.target {
+                continue;
             }
-        };
 
-        if current_temperature == args.temperature_target_value {
-            continue;
+            let new_pwm = self.get_required_pwm();
+
+            if new_pwm > self.pwm.current {
+                self.pwm.write(new_pwm);
+                println!(
+                    "Current temperature {}°C (target {}°C), rising fan speed {} -> {}",
+                    self.temperature.current,
+                    self.temperature.target,
+                    self.pwm.previous,
+                    self.pwm.current
+                );
+            }
+
+            if new_pwm < self.pwm.current {
+                self.pwm.write(new_pwm);
+                println!(
+                    "Current temperature {}°C (target {}°C), lowering fan speed {} -> {}",
+                    self.temperature.current,
+                    self.temperature.target,
+                    self.pwm.previous,
+                    self.pwm.current
+                );
+            }
         }
-
-        let new_pwm = fix_pwm_value(
-            check_required_pwm(current_temperature, previous_temperature, old_pwm, args),
-            &args,
-        );
-
-        if new_pwm > old_pwm {
-            println!(
-                "Current temperature {}°C (target {}°C), rising fan speed {} -> {}",
-                current_temperature, args.temperature_target_value, old_pwm, new_pwm
-            );
-            write_pwm_value(new_pwm, args.gpio_pwm);
-        }
-
-        if new_pwm < old_pwm {
-            println!(
-                "Current temperature {}°C (target {}°C), lowering fan speed {} -> {}",
-                current_temperature, args.temperature_target_value, old_pwm, new_pwm
-            );
-            write_pwm_value(new_pwm, args.gpio_pwm);
-        }
-
-        old_pwm = new_pwm;
-        previous_temperature = current_temperature;
-    }
-}
-
-fn initialize(args: &Args) {
-    unsafe {
-        wiringPiSetup();
-        pinMode(args.gpio_pwm, 1); // 1 = output
-        softPwmCreate(args.gpio_pwm, args.pwm_max, args.pwm_max); // GPIO pin, initial value, range
     }
 }
 
 fn main() {
     let args = Args::parse();
-    initialize(&args);
-    controller(&args);
+    let mut controller = Controller::new(&args);
+    controller.start();
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{check_required_pwm, fix_pwm_value, Args};
-
-    const ARGS: Args = Args {
-        pwm_max: 100,
-        pwm_min: 0,
-        temperature_target_value: 50,
-        temperature_max_value: 70,
-        temperature_file_path: String::new(),
-        pollrate: 0,
-        gpio_pwm: 0,
-    };
+    use super::{Controller, Pwm, Temperature};
+    use std::time;
 
     #[test]
     fn pwm_value_too_high() {
-        let pwm_value = ARGS.pwm_max + 10;
-        let value = fix_pwm_value(pwm_value, &ARGS);
-        assert_eq!(ARGS.pwm_max, value);
+        let pwm = Pwm {
+            current: 0,
+            previous: 0,
+            min: 0,
+            max: 100,
+            gpio_pin: 0,
+        };
+
+        let pwm_value = pwm.max + 10;
+        let value = pwm.fix_pwm_value(pwm_value);
+        assert_eq!(pwm.max, value);
     }
 
     #[test]
     fn pwm_value_too_low() {
-        let pwm_value = ARGS.pwm_min - 10;
-        let value = fix_pwm_value(pwm_value, &ARGS);
-        assert_eq!(ARGS.pwm_min, value);
+        let pwm = Pwm {
+            current: 0,
+            previous: 0,
+            min: 0,
+            max: 100,
+            gpio_pin: 0,
+        };
+
+        let pwm_value = pwm.min - 10;
+        let value = pwm.fix_pwm_value(pwm_value);
+        assert_eq!(pwm.min, value);
     }
 
     #[test]
     fn pwm_value_within_limits() {
-        let pwm_value = ARGS.pwm_max - 10;
-        let value = fix_pwm_value(pwm_value, &ARGS);
+        let pwm = Pwm {
+            current: 0,
+            previous: 0,
+            min: 0,
+            max: 100,
+            gpio_pin: 0,
+        };
+
+        let pwm_value = pwm.max - 10;
+        let value = pwm.fix_pwm_value(pwm_value);
         assert_eq!(pwm_value, value);
     }
 
     #[test]
     fn temperature_over_high_limit() {
-        let curr_temperature = ARGS.temperature_max_value + 1;
-        let prev_temperature = 0; // shouldn't matter
-        let pwm = 50;
-        let value = check_required_pwm(curr_temperature, prev_temperature, pwm, &ARGS);
-        assert_eq!(ARGS.pwm_max, value);
+        let controller = Controller {
+            pollrate: time::Duration::from_secs(5),
+            temperature: Temperature {
+                max: 70,
+                current: 80, // Higher than max
+                previous: 0,
+                target: 40,
+                source_file_path: "".to_string(),
+            },
+            pwm: Pwm {
+                current: 0,
+                previous: 0,
+                min: 0,
+                max: 100,
+                gpio_pin: 0,
+            },
+        };
+
+        let value = controller.get_required_pwm();
+        assert_eq!(controller.pwm.max, value);
     }
 
     #[test]
     fn temperature_same_as_target() {
-        let curr_temperature = ARGS.temperature_target_value;
-        let prev_temperature = 0; // shouldn't matter
-        let pwm = 50;
-        let value = check_required_pwm(curr_temperature, prev_temperature, pwm, &ARGS);
-        assert_eq!(pwm, value);
+        let controller = Controller {
+            pollrate: time::Duration::from_secs(5),
+            temperature: Temperature {
+                target: 40,
+                current: 40, // Same as target
+                previous: 0,
+                max: 70,
+                source_file_path: "".to_string(),
+            },
+            pwm: Pwm {
+                current: 50,
+                previous: 0,
+                min: 0,
+                max: 100,
+                gpio_pin: 0,
+            },
+        };
+
+        let value = controller.get_required_pwm();
+        assert_eq!(controller.pwm.current, value);
     }
 
     #[test]
     fn temperature_over_target_and_rising() {
-        let curr_temperature = ARGS.temperature_target_value + 10;
-        let prev_temperature = curr_temperature - 5;
-        let pwm = 50;
-        let value = check_required_pwm(curr_temperature, prev_temperature, pwm, &ARGS);
-        assert_eq!(pwm + 2, value);
+        let controller = Controller {
+            pollrate: time::Duration::from_secs(5),
+            temperature: Temperature {
+                target: 40,
+                current: 55,  // Higher than target and previous
+                previous: 50, // Lower than current
+                max: 70,
+                source_file_path: "".to_string(),
+            },
+            pwm: Pwm {
+                current: 50,
+                previous: 0,
+                min: 0,
+                max: 100,
+                gpio_pin: 0,
+            },
+        };
+
+        let value = controller.get_required_pwm();
+        assert_eq!(controller.pwm.current + 2, value);
     }
 
     #[test]
     fn temperature_over_target_and_lowering() {
-        let curr_temperature = ARGS.temperature_target_value + 10;
-        let prev_temperature = curr_temperature + 5;
-        let pwm = 50;
-        let value = check_required_pwm(curr_temperature, prev_temperature, pwm, &ARGS);
-        assert_eq!(pwm - 1, value);
+        let controller = Controller {
+            pollrate: time::Duration::from_secs(5),
+            temperature: Temperature {
+                target: 40,
+                current: 50,  // Higher than target, but lower than previous
+                previous: 55, // Higher than current
+                max: 70,
+                source_file_path: "".to_string(),
+            },
+            pwm: Pwm {
+                current: 50,
+                previous: 0,
+                min: 0,
+                max: 100,
+                gpio_pin: 0,
+            },
+        };
+
+        let value = controller.get_required_pwm();
+        assert_eq!(controller.pwm.current - 1, value);
     }
 
     #[test]
     fn temperature_below_target() {
-        let curr_temperature = ARGS.temperature_target_value - 10;
-        let prev_temperature = 0; // shouldn't matter
-        let pwm = 50;
-        let value = check_required_pwm(curr_temperature, prev_temperature, pwm, &ARGS);
-        assert_eq!(pwm - 1, value);
+        let controller = Controller {
+            pollrate: time::Duration::from_secs(5),
+            temperature: Temperature {
+                target: 40,
+                current: 30, // Lower than target
+                previous: 0,
+                max: 70,
+                source_file_path: "".to_string(),
+            },
+            pwm: Pwm {
+                current: 50,
+                previous: 0,
+                min: 0,
+                max: 100,
+                gpio_pin: 0,
+            },
+        };
+
+        let value = controller.get_required_pwm();
+        assert_eq!(controller.pwm.current - 1, value);
     }
 }

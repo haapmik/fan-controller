@@ -1,11 +1,13 @@
 [package]
 name = "fan-controller"
-description = "Simple program that tries to maintain target temperature"
+description = "Simple program that tries to maintain target temperature by adjusting fan pwm values"
+repository = "https://github.com/haapmik/fan-controller"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
 
 [profile.release]
-opt-level = 'z'   # Optimize for size
+opt-level = "z"   # Optimize for size
 lto = true        # Enable link-time optimization
 codegen-units = 1 # Reduce paraller code generation
 strip = true      # Strip symbols from binary
