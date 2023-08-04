@@ -2,7 +2,7 @@
 name = "fan-controller"
 description = "Simple program that tries to maintain target temperature by adjusting fan pwm values"
 repository = "https://github.com/haapmik/fan-controller"
-version = "0.1.0"
+version = "0.3.0"
 edition = "2021"
 license = "MIT"
 

@@ -45,6 +45,10 @@ struct Args {
     /// GPIO pin controlling the fan
     #[arg(short, long)]
     gpio_pwm: i32,
+
+    /// Print systemd service file content
+    #[arg(long)]
+    print_systemd: bool,
 }
 
 struct Pwm {
@@ -218,8 +222,35 @@ impl Controller {
     }
 }
 
+fn print_systemd(args: &Args) {
+    let options = format!(
+        "--gpio-pwm {:?} --pollrate {:?} --temperature-target-value {:?}",
+        args.gpio_pwm, args.pollrate, args.temperature_target_value
+    );
+
+    println!(
+        "[Unit]
+Description=PWM fan controller for Orange PI systems
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/opi-fan-controller {}
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target",
+        options
+    );
+}
+
 fn main() {
     let args = Args::parse();
+
+    if args.print_systemd == true {
+        print_systemd(&args);
+        return;
+    }
+
     let mut controller = Controller::new(&args);
     controller.start();
 }
