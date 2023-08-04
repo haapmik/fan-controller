@@ -1,8 +1,8 @@
 # fan-controller
 
-PWM fan controller for Orange PI system made with Rust.
+PWM fan controller for Orange PI boards made with Rust.
 
-This was just a small personal project to learn [Rust programming language](https://www.rust-lang.org/).
+This was just a small personal project to learn [Rust programming language](https://www.rust-lang.org/) and to have a fan controller for my board.
 
 ## Installation
 
