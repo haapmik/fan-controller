@@ -19,7 +19,7 @@ Then build and install this application.
 
 ```sh
 cargo build --release
-cp target/release/fan-controller /usr/bin
+cp target/release/fan-controller /usr/local/bin
 ```
 
 Please see the provided help for how to use the application.

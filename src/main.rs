@@ -247,7 +247,7 @@ Description=PWM fan controller for Orange PI systems
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/opi-fan-controller {}
+ExecStart=/usr/local/bin/opi-fan-controller {}
 Restart=on-failure
 
 [Install]
