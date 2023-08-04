@@ -74,6 +74,7 @@ impl Pwm {
         }
     }
 
+    /// Initializes GPIO pin for PWM use
     fn init(&self) {
         unsafe {
             wiringPiSetup();
@@ -82,6 +83,7 @@ impl Pwm {
         }
     }
 
+    /// Checks and fixes provided PWM value to be within the limits
     fn fix_pwm_value(&self, value: i32) -> i32 {
         if value > self.max {
             return self.max;
@@ -94,6 +96,7 @@ impl Pwm {
         return value;
     }
 
+    /// Writes new PWM value
     fn write(&mut self, value: i32) {
         self.previous = self.current;
         self.current = self.fix_pwm_value(value);
@@ -122,6 +125,7 @@ impl Temperature {
         }
     }
 
+    /// Read temperature from the provided source file.
     fn read(&mut self) {
         let path = Path::new(&self.source_file_path);
         let fcontext = fs::read_to_string(path).unwrap_or_else(|error| {
@@ -150,6 +154,11 @@ struct Controller {
 }
 
 impl Controller {
+    /// Returns a controller to be used within the application.
+    ///
+    /// # Arguments
+    ///
+    /// * `args` - Application options arguments
     fn new(args: &Args) -> Self {
         Self {
             pollrate: time::Duration::from_secs(args.pollrate),
@@ -158,6 +167,7 @@ impl Controller {
         }
     }
 
+    /// Determines required PWM value to get closer to the target temperature.
     fn get_required_pwm(&self) -> i32 {
         if self.temperature.current >= self.temperature.max {
             return self.pwm.max;
@@ -182,6 +192,7 @@ impl Controller {
         return self.pwm.current;
     }
 
+    /// Starts the controller
     fn start(&mut self) {
         self.pwm.init();
 
@@ -197,6 +208,7 @@ impl Controller {
 
             let new_pwm = self.pwm.fix_pwm_value(self.get_required_pwm());
 
+            // Only make changes if new PWM value actually differs from previous
             if new_pwm > self.pwm.current {
                 self.pwm.write(new_pwm);
                 println!(
@@ -222,6 +234,7 @@ impl Controller {
     }
 }
 
+/// Prints systemd service file content with the given options.
 fn print_systemd(args: &Args) {
     let options = format!(
         "--gpio-pwm {:?} --pollrate {:?} --temperature-target-value {:?}",
