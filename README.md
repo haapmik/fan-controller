@@ -1,5 +1,6 @@
 # fan-controller
-PWM Fan controller for Orange PI system made with Rust.
+
+PWM fan controller for Orange PI system made with Rust.
 
 This was just a small personal project to learn [Rust programming language](https://www.rust-lang.org/).
 
@@ -14,16 +15,39 @@ cd wiringOP
 ./build
 ```
 
-Then compile this project.
+Then build and install this application.
 
 ```sh
 cargo build --release
+cp target/release/fan-controller /usr/bin
 ```
 
-To run the application, please see the provided help.
+Please see the provided help for how to use the application.
 
 ```sh
-./target/release/fan-controller --help
+fan-controller --help
+```
+
+### Systemd
+
+To use this as a service with systemd enabled systems, please follow steps shown below.
+
+```sh
+fan-controller --gpio-pwn 3 --print-systemd > /etc/systemd/system/fan-controller.service
+systemctl daemon-reload
+systemctl start fan-controller.service
+```
+
+Check from logs that the service actually works as you intended it to work.
+
+```sh
+journalctl -u fan-controller.service --since="5 minutes ago"
+```
+
+Then enable the service to run during system startup.
+
+```sh
+systemctl enable fan-controller.service
 ```
 
 ## Testing
