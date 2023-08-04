@@ -1,6 +1,6 @@
 use clap::Parser;
 use libc::c_int;
-use std::{fs, thread, time};
+use std::{fs, path::Path, thread, time};
 
 #[link(name = "wiringPi")]
 extern "C" {
@@ -104,20 +104,25 @@ impl Temperature {
             previous: 0,
             max: args.temperature_max_value,
             target: args.temperature_target_value,
-            source_file_path: "".to_string(),
+            source_file_path: args.temperature_file_path.to_string(),
         }
     }
 
     fn read(&mut self) {
-        self.previous = self.current;
-        let fcontext = fs::read_to_string(&self.source_file_path).unwrap_or_else(|error| {
-            panic!("Failed to read temperature: {:?}", error);
+        let path = Path::new(&self.source_file_path);
+        let fcontext = fs::read_to_string(path).unwrap_or_else(|error| {
+            panic!(
+                "Failed to read temperature from {:?}: {:?}",
+                path.display(),
+                error
+            );
         });
 
-        let value: i32 = fcontext.parse().unwrap_or_else(|error| {
+        let value: i32 = fcontext.trim().parse().unwrap_or_else(|error| {
             panic!("Failed to parse temperature value: {:?}", error);
         });
 
+        self.previous = self.current;
         self.current = value / 1000;
     }
 }
