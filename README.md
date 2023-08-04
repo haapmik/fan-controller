@@ -19,3 +19,9 @@ Then compile this project.
 ```sh
 cargo build --release
 ```
+
+## Testing
+
+```sh
+cargo test
+```
