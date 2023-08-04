@@ -20,6 +20,12 @@ Then compile this project.
 cargo build --release
 ```
 
+To run the application, please see the provided help.
+
+```sh
+./target/release/fan-controller --help
+```
+
 ## Testing
 
 ```sh
