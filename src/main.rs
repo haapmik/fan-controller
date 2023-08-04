@@ -133,7 +133,9 @@ impl Temperature {
         });
 
         self.previous = self.current;
-        self.current = value / 1000.0;
+
+        // Round to one decimal point
+        self.current = ((value / 1000.0) * 10.0).round() / 10.0;
     }
 }
 
@@ -184,6 +186,7 @@ impl Controller {
 
             self.temperature.read();
 
+            // Avoid making unnecessary PWM changes when we are near the target temperature
             if self.temperature.current.round() == self.temperature.target {
                 continue;
             }
