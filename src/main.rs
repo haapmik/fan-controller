@@ -31,7 +31,7 @@ struct Args {
     #[arg(short, long, default_value_t = 40.0)]
     temperature_target_value: f32,
 
-    // Max allowed temperature value
+    /// Max allowed temperature value
     #[arg(long, default_value_t = 70.0)]
     temperature_max_value: f32,
 
@@ -42,7 +42,7 @@ struct Args {
     #[arg(short, long, default_value_t = 5)]
     pollrate: u64,
 
-    // GPIO pin controlling the fan
+    /// GPIO pin controlling the fan
     #[arg(short, long)]
     gpio_pwm: i32,
 }
@@ -191,7 +191,7 @@ impl Controller {
                 continue;
             }
 
-            let new_pwm = self.get_required_pwm();
+            let new_pwm = self.pwm.fix_pwm_value(self.get_required_pwm());
 
             if new_pwm > self.pwm.current {
                 self.pwm.write(new_pwm);
